@@ -48,6 +48,8 @@ final class OverlayManager: ObservableObject {
         guard isShowing else { return }
         self.isShowing = false
         
+        SoundManager.shared.stopAudio()
+        
         if let window = overlayWindow {
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.2
