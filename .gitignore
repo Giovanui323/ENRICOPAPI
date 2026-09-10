@@ -2,5 +2,5 @@
 .DS_Store
 *.swp
 *.o
-EnricoPapi
-EnricoPapi.app/
+/EnricoPapi
+/EnricoPapi.app/
