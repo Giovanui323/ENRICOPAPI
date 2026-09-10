@@ -16,8 +16,7 @@ public struct GazeStatus: Sendable {
     public var continuousDistractionTime: TimeInterval = 0.0
 }
 
-@MainActor
-final class FaceTracker: ObservableObject {
+final class FaceTracker: ObservableObject, @unchecked Sendable {
     static let shared = FaceTracker()
     
     @Published var currentStatus = GazeStatus()
@@ -34,42 +33,46 @@ final class FaceTracker: ObservableObject {
     @Published var isTrackingActive: Bool = true
     
     private var distractionStartTime: Date? = nil
-    private var isCurrentlyFlaggedDistracted: Bool = false
     private let sequenceHandler = VNSequenceRequestHandler()
+    private let visionQueue = DispatchQueue(label: "com.enricopapi.vision", qos: .userInitiated)
     private var isProcessingFrame = false
+    private var startupGraceUntil = Date().addingTimeInterval(3.5)
     
     // Callback for overlay trigger
-    var onDistractionTriggered: ((String) -> Void)?
-    var onDistractionResolved: (() -> Void)?
+    var onDistractionTriggered: (@Sendable (String) -> Void)?
+    var onDistractionResolved: (@Sendable () -> Void)?
     
     private init() {}
     
     func resetDistractionCount() {
-        distractionCount = 0
+        DispatchQueue.main.async {
+            self.distractionCount = 0
+        }
     }
     
     func processPixelBuffer(_ pixelBuffer: CVPixelBuffer) {
-        guard isTrackingActive else { return }
-        guard !isProcessingFrame else { return }
-        isProcessingFrame = true
-        
-        let request = VNDetectFaceLandmarksRequest { [weak self] request, error in
-            defer { self?.isProcessingFrame = false }
-            guard let self = self else { return }
-            
-            Task { @MainActor in
-                self.handleVisionResults(request.results as? [VNFaceObservation], error: error)
+        visionQueue.async { [weak self] in
+            autoreleasepool {
+                guard let self = self else { return }
+                guard self.isTrackingActive else { return }
+                guard !self.isProcessingFrame else { return }
+                
+                self.isProcessingFrame = true
+                defer { self.isProcessingFrame = false }
+                
+                let request = VNDetectFaceLandmarksRequest()
+                do {
+                    try self.sequenceHandler.perform([request], on: pixelBuffer, orientation: .leftMirrored)
+                    let observations = request.results
+                    self.handleVisionResults(observations)
+                } catch {
+                    // Vision error fallback
+                }
             }
-        }
-        
-        do {
-            try sequenceHandler.perform([request], on: pixelBuffer, orientation: .leftMirrored)
-        } catch {
-            isProcessingFrame = false
         }
     }
     
-    private func handleVisionResults(_ observations: [VNFaceObservation]?, error: Error?) {
+    private func handleVisionResults(_ observations: [VNFaceObservation]?) {
         guard isTrackingActive else { return }
         
         guard let observations = observations, let face = observations.first else {
@@ -166,6 +169,30 @@ final class FaceTracker: ObservableObject {
         let now = Date()
         var continuousTime: TimeInterval = 0
         
+        // Grace period on app launch to let user settle
+        if now < startupGraceUntil {
+            let status = GazeStatus(
+                isFaceDetected: faceDetected,
+                isDistracted: false,
+                distractionReason: "Calibrazione iniziale fotocamera...",
+                yaw: yaw,
+                pitch: pitch,
+                roll: roll,
+                leftEyeOpenness: leftEyeOpenness,
+                rightEyeOpenness: rightEyeOpenness,
+                pupilVerticalOffset: pupilOffset,
+                continuousDistractionTime: 0
+            )
+            DispatchQueue.main.async {
+                self.currentStatus = status
+            }
+            distractionStartTime = nil
+            return
+        }
+        
+        var shouldTriggerAlert = false
+        var shouldResolveAlert = false
+        
         if isDistracted {
             if let start = distractionStartTime {
                 continuousTime = now.timeIntervalSince(start)
@@ -176,23 +203,18 @@ final class FaceTracker: ObservableObject {
             
             // Trigger overlay if distraction exceeds tolerance
             if continuousTime >= toleranceSeconds && !isDistractionAlertActive {
-                isDistractionAlertActive = true
-                alertReason = reason
-                distractionCount += 1
-                onDistractionTriggered?(reason)
+                shouldTriggerAlert = true
             }
         } else {
             // User is looking at the screen
             if isDistractionAlertActive {
-                isDistractionAlertActive = false
-                alertReason = ""
-                onDistractionResolved?()
+                shouldResolveAlert = true
             }
             distractionStartTime = nil
             continuousTime = 0
         }
         
-        currentStatus = GazeStatus(
+        let status = GazeStatus(
             isFaceDetected: faceDetected,
             isDistracted: isDistracted,
             distractionReason: isDistracted ? reason : "Concentrato sul computer",
@@ -204,11 +226,25 @@ final class FaceTracker: ObservableObject {
             pupilVerticalOffset: pupilOffset,
             continuousDistractionTime: continuousTime
         )
+        
+        DispatchQueue.main.async {
+            self.currentStatus = status
+            
+            if shouldTriggerAlert {
+                self.isDistractionAlertActive = true
+                self.alertReason = reason
+                self.distractionCount += 1
+                self.onDistractionTriggered?(reason)
+            } else if shouldResolveAlert {
+                self.isDistractionAlertActive = false
+                self.alertReason = ""
+                self.onDistractionResolved?()
+            }
+        }
     }
     
     private func calculateEyeAspect(points: [CGPoint]) -> Double {
         guard points.count >= 6 else { return 0.25 }
-        // Simple vertical height over horizontal width calculation
         let minX = points.map { $0.x }.min() ?? 0
         let maxX = points.map { $0.x }.max() ?? 1
         let minY = points.map { $0.y }.min() ?? 0

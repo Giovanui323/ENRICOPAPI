@@ -14,7 +14,8 @@ final class CameraManager: NSObject, ObservableObject, @unchecked Sendable {
     private let captureSession = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
-    private let ciContext = CIContext()
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private var previewThrottleCounter: Int = 0
     
     override private init() {
         super.init()
@@ -73,7 +74,7 @@ final class CameraManager: NSObject, ObservableObject, @unchecked Sendable {
                     kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
                 ]
                 self.videoOutput.alwaysDiscardsLateVideoFrames = true
-                self.videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "camera.video.output"))
+                self.videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "camera.video.output", qos: .userInteractive))
                 
                 if self.captureSession.canAddOutput(self.videoOutput) {
                     self.captureSession.addOutput(self.videoOutput)
@@ -117,20 +118,23 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        
-        // Pass frame to FaceTracker on MainActor
-        Task { @MainActor in
+        autoreleasepool {
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            
+            // Send to FaceTracker for background Vision processing
             FaceTracker.shared.processPixelBuffer(pixelBuffer)
-        }
-        
-        // Convert to NSImage for UI preview
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        if let cgImage = self.ciContext.createCGImage(ciImage, from: ciImage.extent) {
-            let size = NSSize(width: ciImage.extent.width, height: ciImage.extent.height)
-            let nsImage = NSImage(cgImage: cgImage, size: size)
-            DispatchQueue.main.async {
-                self.currentFrame = nsImage
+            
+            // Throttle UI preview to ~6 FPS to conserve memory and CPU
+            previewThrottleCounter += 1
+            if previewThrottleCounter % 5 == 0 {
+                let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+                if let cgImage = self.ciContext.createCGImage(ciImage, from: ciImage.extent) {
+                    let size = NSSize(width: ciImage.extent.width, height: ciImage.extent.height)
+                    let nsImage = NSImage(cgImage: cgImage, size: size)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.currentFrame = nsImage
+                    }
+                }
             }
         }
     }
