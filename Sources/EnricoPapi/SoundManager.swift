@@ -2,15 +2,15 @@ import Foundation
 import AVFoundation
 import AppKit
 
-@MainActor
-final class SoundManager: ObservableObject {
+final class SoundManager: NSObject, ObservableObject, @unchecked Sendable {
     static let shared = SoundManager()
     
     private let synthesizer = AVSpeechSynthesizer()
+    private var audioPlayer: AVAudioPlayer?
     private var lastSpeechTime: Date = Date.distantPast
     
     @Published var isVoiceEnabled: Bool = true
-    @Published var isSoundFxEnabled: Bool = true
+    @Published var isMoosecaAudioEnabled: Bool = true
     @Published var speechRate: Float = 0.52
     
     private let warningPhrases: [String] = [
@@ -23,20 +23,59 @@ final class SoundManager: ObservableObject {
         "Ti sei distratto! Torna a studiare subito!"
     ]
     
-    private init() {}
+    override private init() {
+        super.init()
+        prepareAudioPlayer()
+    }
+    
+    private func prepareAudioPlayer() {
+        let possiblePaths = [
+            Bundle.main.resourcePath.map { $0 + "/mooseca.wav" } ?? "",
+            Bundle.main.resourcePath.map { $0 + "/mooseca.mp3" } ?? "",
+            FileManager.default.currentDirectoryPath + "/Assets/mooseca.wav",
+            FileManager.default.currentDirectoryPath + "/Assets/mooseca.mp3"
+        ]
+        
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path) {
+                let url = URL(fileURLWithPath: path)
+                do {
+                    audioPlayer = try AVAudioPlayer(contentsOf: url)
+                    audioPlayer?.prepareToPlay()
+                    break
+                } catch {
+                    // fallback to speech
+                }
+            }
+        }
+    }
     
     func playDistractionAlert(reason: String) {
-        if isSoundFxEnabled {
-            playAlertTone()
+        if isMoosecaAudioEnabled {
+            playMoosecaAudio()
         }
         
         if isVoiceEnabled {
-            // Rate limit speech to avoid overlap
             let now = Date()
-            if now.timeIntervalSince(lastSpeechTime) > 3.5 {
+            if now.timeIntervalSince(lastSpeechTime) > 3.0 {
                 lastSpeechTime = now
                 speakRandomWarning(reason: reason)
             }
+        }
+    }
+    
+    func playMoosecaAudio() {
+        if audioPlayer == nil {
+            prepareAudioPlayer()
+        }
+        
+        if let player = audioPlayer {
+            player.stop()
+            player.currentTime = 0
+            player.volume = 1.0
+            player.play()
+        } else {
+            NSSound.beep()
         }
     }
     
@@ -64,18 +103,17 @@ final class SoundManager: ObservableObject {
     }
     
     func speak(text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
-        
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "it-IT") ?? AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = speechRate
-        utterance.pitchMultiplier = 1.15
-        utterance.volume = 1.0
-        
-        synthesizer.speak(utterance)
-    }
-    
-    private func playAlertTone() {
-        NSSound.beep()
+        DispatchQueue.main.async {
+            self.synthesizer.stopSpeaking(at: .immediate)
+            
+            let utterance = AVSpeechUtterance(string: text)
+            // Use Italian voice
+            utterance.voice = AVSpeechSynthesisVoice(language: "it-IT") ?? AVSpeechSynthesisVoice(language: "en-US")
+            utterance.rate = self.speechRate
+            utterance.pitchMultiplier = 1.15
+            utterance.volume = 1.0
+            
+            self.synthesizer.speak(utterance)
+        }
     }
 }

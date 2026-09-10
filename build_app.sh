@@ -21,11 +21,14 @@ swiftc Sources/EnricoPapi/*.swift \
     -module-cache-path "${MODULE_CACHE}" \
     -O
 
-# 2. Copia Info.plist
-echo "📋 Installazione Info.plist..."
+# 2. Copia Info.plist e Icona
+echo "📋 Installazione Info.plist e AppIcon..."
 cp Resources/Info.plist "${CONTENTS_DIR}/Info.plist"
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp Resources/AppIcon.icns "${RESOURCES_DIR}/AppIcon.icns"
+fi
 
-# 3. Copia eventuali asset aggiuntivi
+# 3. Copia eventuali asset aggiuntivi (immagini, audio)
 if [ -d "Assets" ]; then
     cp -r Assets/* "${RESOURCES_DIR}/" 2>/dev/null || true
 fi
