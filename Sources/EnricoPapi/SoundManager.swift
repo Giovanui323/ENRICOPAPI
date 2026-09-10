@@ -55,5 +55,9 @@ final class SoundManager: NSObject, ObservableObject, @unchecked Sendable {
     
     func stopAudio() {
         audioPlayer?.stop()
+        audioPlayer?.currentTime = 0
+        Task { @MainActor in
+            OverlayVideoController.shared.stop()
+        }
     }
 }

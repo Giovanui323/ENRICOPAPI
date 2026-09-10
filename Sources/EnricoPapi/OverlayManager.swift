@@ -33,7 +33,13 @@ final class OverlayManager: ObservableObject {
         self.isShowing = true
         self.currentReason = reason
         
-        SoundManager.shared.playDistractionAlert(reason: reason)
+        let videoURL = PapiAssetLoader.videoURL()
+        if let videoURL = videoURL {
+            let isMuted = !SoundManager.shared.isMoosecaAudioEnabled
+            OverlayVideoController.shared.start(url: videoURL, isMuted: isMuted)
+        } else {
+            SoundManager.shared.playDistractionAlert(reason: reason)
+        }
         
         let screen = NSScreen.main ?? NSScreen.screens.first!
         let window = getOrCreateOverlayWindow(for: screen)
@@ -48,23 +54,28 @@ final class OverlayManager: ObservableObject {
         guard isShowing else { return }
         self.isShowing = false
         
+        // IMMEDIATELY CUT OFF ALL AUDIO AND VIDEO PLAYBACK
         SoundManager.shared.stopAudio()
+        OverlayVideoController.shared.stop()
         
         if let window = overlayWindow {
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.2
+                context.duration = 0.15
                 window.animator().alphaValue = 0.0
             }, completionHandler: {
+                window.contentView = nil
                 window.orderOut(nil)
             })
         }
     }
     
     private func getOrCreateOverlayWindow(for screen: NSScreen) -> NSWindow {
+        let overlayView = PapiOverlayView(reason: currentReason) { [weak self] in
+            self?.dismissAlert()
+        }
+        let hostingView = NSHostingView(rootView: overlayView)
+        
         if let existing = overlayWindow {
-            let hostingView = NSHostingView(rootView: PapiOverlayView(reason: currentReason) { [weak self] in
-                self?.dismissAlert()
-            })
             existing.contentView = hostingView
             return existing
         }
@@ -84,12 +95,7 @@ final class OverlayManager: ObservableObject {
         window.backgroundColor = NSColor.clear
         window.hasShadow = false
         window.ignoresMouseEvents = false
-        
-        let overlayView = PapiOverlayView(reason: currentReason) { [weak self] in
-            self?.dismissAlert()
-        }
-        
-        window.contentView = NSHostingView(rootView: overlayView)
+        window.contentView = hostingView
         self.overlayWindow = window
         return window
     }
