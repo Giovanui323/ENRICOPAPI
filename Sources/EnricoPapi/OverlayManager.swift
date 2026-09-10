@@ -6,7 +6,7 @@ import SwiftUI
 final class OverlayManager: ObservableObject {
     static let shared = OverlayManager()
     
-    private var overlayWindows: [NSWindow] = []
+    private var overlayWindow: NSWindow?
     @Published var isShowing: Bool = false
     @Published var currentReason: String = "Distrazione rilevata!"
     
@@ -16,11 +16,15 @@ final class OverlayManager: ObservableObject {
     
     private func setupBindings() {
         FaceTracker.shared.onDistractionTriggered = { [weak self] reason in
-            self?.triggerAlert(reason: reason)
+            Task { @MainActor in
+                self?.triggerAlert(reason: reason)
+            }
         }
         
         FaceTracker.shared.onDistractionResolved = { [weak self] in
-            self?.dismissAlert()
+            Task { @MainActor in
+                self?.dismissAlert()
+            }
         }
     }
     
@@ -31,12 +35,11 @@ final class OverlayManager: ObservableObject {
         
         SoundManager.shared.playDistractionAlert(reason: reason)
         
-        // Show fullscreen overlay on all active screens
-        for screen in NSScreen.screens {
-            let window = createOverlayWindow(for: screen, reason: reason)
-            overlayWindows.append(window)
-            window.makeKeyAndOrderFront(nil)
-        }
+        let screen = NSScreen.main ?? NSScreen.screens.first!
+        let window = getOrCreateOverlayWindow(for: screen)
+        window.setFrame(screen.frame, display: true)
+        window.alphaValue = 1.0
+        window.orderFrontRegardless()
         
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -45,20 +48,25 @@ final class OverlayManager: ObservableObject {
         guard isShowing else { return }
         self.isShowing = false
         
-        for window in overlayWindows {
-            window.animator().alphaValue = 0.0
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            for window in self?.overlayWindows ?? [] {
+        if let window = overlayWindow {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.2
+                window.animator().alphaValue = 0.0
+            }, completionHandler: {
                 window.orderOut(nil)
-                window.close()
-            }
-            self?.overlayWindows.removeAll()
+            })
         }
     }
     
-    private func createOverlayWindow(for screen: NSScreen, reason: String) -> NSWindow {
+    private func getOrCreateOverlayWindow(for screen: NSScreen) -> NSWindow {
+        if let existing = overlayWindow {
+            let hostingView = NSHostingView(rootView: PapiOverlayView(reason: currentReason) { [weak self] in
+                self?.dismissAlert()
+            })
+            existing.contentView = hostingView
+            return existing
+        }
+        
         let window = NSWindow(
             contentRect: screen.frame,
             styleMask: [.borderless, .fullSizeContentView],
@@ -67,6 +75,7 @@ final class OverlayManager: ObservableObject {
             screen: screen
         )
         
+        window.isReleasedWhenClosed = false
         window.level = .screenSaver
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isOpaque = false
@@ -74,11 +83,12 @@ final class OverlayManager: ObservableObject {
         window.hasShadow = false
         window.ignoresMouseEvents = false
         
-        let overlayView = PapiOverlayView(reason: reason) { [weak self] in
+        let overlayView = PapiOverlayView(reason: currentReason) { [weak self] in
             self?.dismissAlert()
         }
         
         window.contentView = NSHostingView(rootView: overlayView)
+        self.overlayWindow = window
         return window
     }
 }
