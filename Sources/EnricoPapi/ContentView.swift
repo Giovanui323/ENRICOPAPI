@@ -243,7 +243,7 @@ struct ContentView: View {
                         isBreakMode.toggle()
                         pomodoroSecondsRemaining = isBreakMode ? (5 * 60) : (25 * 60)
                         FaceTracker.shared.isTrackingActive = !isBreakMode
-                        SoundManager.shared.speak(text: isBreakMode ? "Pausa finita! Si torna a studiare!" : "Ottimo lavoro! Pausa caffè!")
+                        SoundManager.shared.playMoosecaAudio()
                     }
                 }
             }
@@ -362,14 +362,13 @@ struct SettingsView: View {
                     .padding(16)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
                     
-                    // SECTION 2: Audio e Voce
+                    // SECTION 2: Audio Mooseca
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Audio & Voce")
+                        Text("Audio Mooseca")
                             .font(.headline)
                             .foregroundColor(.primary)
                         
-                        Toggle("Jingle \"MOOSECA!\" all'allarme", isOn: $soundManager.isMoosecaAudioEnabled)
-                        Toggle("Voce di Enrico Papi (\"Studia!\")", isOn: $soundManager.isVoiceEnabled)
+                        Toggle("Audio \"MOOSECA!\" all'allarme", isOn: $soundManager.isMoosecaAudioEnabled)
                         
                         Button(action: { soundManager.playMoosecaAudio() }) {
                             Label("Ascolta Anteprima Audio Mooseca", systemImage: "speaker.wave.3.fill")

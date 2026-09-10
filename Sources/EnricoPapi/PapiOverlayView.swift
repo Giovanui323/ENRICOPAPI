@@ -51,7 +51,7 @@ struct PapiOverlayView: View {
                 }
                 .offset(x: shakeOffset)
                 
-                // ENRICO PAPI ANIMATION (VIDEO OR IMAGE)
+                // ENRICO PAPI ANIMATION (5-SECOND LOOP VIDEO OR IMAGE)
                 ZStack {
                     RoundedRectangle(cornerRadius: 30)
                         .stroke(
