@@ -24,7 +24,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = FaceTracker.shared
         _ = OverlayManager.shared
         
+        setupDockIcon()
         setupStatusBarItem()
+    }
+    
+    private func setupDockIcon() {
+        if let icon = loadStatusBarIcon() {
+            NSApp.applicationIconImage = icon
+            NSApp.dockTile.display()
+        }
     }
     
     private func setupStatusBarItem() {
