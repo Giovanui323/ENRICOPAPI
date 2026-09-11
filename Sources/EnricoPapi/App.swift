@@ -11,7 +11,7 @@ struct EnricoPapiApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
-        .defaultSize(width: 480, height: 600)
+        .defaultSize(width: 420, height: 580)
     }
 }
 
@@ -58,6 +58,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func loadStatusBarIcon() -> NSImage? {
         let paths = [
+            Bundle.main.resourcePath.map { $0 + "/papi_laser.png" } ?? "",
+            FileManager.default.currentDirectoryPath + "/Assets/papi_laser.png",
+            "/Users/lucasicignano/ENRICOPAPI/Assets/papi_laser.png",
             Bundle.main.resourcePath.map { $0 + "/enrico_papi.jpg" } ?? "",
             FileManager.default.currentDirectoryPath + "/Assets/enrico_papi.jpg",
             "/Users/lucasicignano/ENRICOPAPI/Assets/enrico_papi.jpg"
