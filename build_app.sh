@@ -37,5 +37,9 @@ fi
 echo "🔏 Firma del bundle dell'applicazione..."
 codesign --force --deep --sign - "${BUNDLE_DIR}" 2>/dev/null || true
 
+# 5. Notifica LaunchServices per aggiornare l'icona nel Dock
+touch "${BUNDLE_DIR}"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${BUNDLE_DIR}" 2>/dev/null || true
+
 echo "✅ Applicazione compilata con successo: ${BUNDLE_DIR}"
 echo "🚀 Per avviarla esegui: open ${BUNDLE_DIR} oppure ./run.sh"
