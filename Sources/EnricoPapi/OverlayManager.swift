@@ -9,6 +9,7 @@ final class OverlayManager: ObservableObject {
     private var overlayWindow: NSWindow?
     @Published var isShowing: Bool = false
     @Published var currentReason: String = "Distrazione rilevata!"
+    @Published var hasAcknowledged: Bool = false
     
     private init() {
         setupBindings()
@@ -23,7 +24,7 @@ final class OverlayManager: ObservableObject {
         
         FaceTracker.shared.onDistractionResolved = { [weak self] in
             Task { @MainActor in
-                self?.dismissAlert()
+                self?.checkUnlockCondition()
             }
         }
     }
@@ -31,6 +32,7 @@ final class OverlayManager: ObservableObject {
     func triggerAlert(reason: String) {
         guard !isShowing else { return }
         self.isShowing = true
+        self.hasAcknowledged = false
         self.currentReason = reason
         
         let videoURL = PapiAssetLoader.videoURL()
@@ -50,9 +52,28 @@ final class OverlayManager: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
     
+    func acknowledge() {
+        self.hasAcknowledged = true
+        checkUnlockCondition()
+    }
+    
+    func checkUnlockCondition() {
+        guard isShowing else { return }
+        let status = FaceTracker.shared.currentStatus
+        let isLookingAtPC = status.isFaceDetected && !status.isDistracted
+        
+        if hasAcknowledged && isLookingAtPC {
+            dismissAlert()
+        }
+    }
+    
     func dismissAlert() {
         guard isShowing else { return }
         self.isShowing = false
+        self.hasAcknowledged = false
+        
+        FaceTracker.shared.isDistractionAlertActive = false
+        FaceTracker.shared.alertReason = ""
         
         // IMMEDIATELY CUT OFF ALL AUDIO AND VIDEO PLAYBACK
         SoundManager.shared.stopAudio()
