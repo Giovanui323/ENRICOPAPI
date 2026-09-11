@@ -30,7 +30,13 @@ final class FaceTracker: ObservableObject, @unchecked Sendable {
     @Published var pitchDownThreshold: Double = -0.16   // Downward head tilt
     @Published var checkEyesClosed: Bool = true
     @Published var eyeOpennessThreshold: Double = 0.15
-    @Published var isTrackingActive: Bool = true
+    @Published var isTrackingActive: Bool = false {
+        didSet {
+            if !isTrackingActive {
+                distractionStartTime = nil
+            }
+        }
+    }
     
     private var distractionStartTime: Date? = nil
     private let sequenceHandler = VNSequenceRequestHandler()
@@ -191,7 +197,6 @@ final class FaceTracker: ObservableObject, @unchecked Sendable {
         }
         
         var shouldTriggerAlert = false
-        var shouldResolveAlert = false
         
         if isDistracted {
             if let start = distractionStartTime {
@@ -207,9 +212,6 @@ final class FaceTracker: ObservableObject, @unchecked Sendable {
             }
         } else {
             // User is looking at the screen
-            if isDistractionAlertActive {
-                shouldResolveAlert = true
-            }
             distractionStartTime = nil
             continuousTime = 0
         }
@@ -235,9 +237,7 @@ final class FaceTracker: ObservableObject, @unchecked Sendable {
                 self.alertReason = reason
                 self.distractionCount += 1
                 self.onDistractionTriggered?(reason)
-            } else if shouldResolveAlert {
-                self.isDistractionAlertActive = false
-                self.alertReason = ""
+            } else if self.isDistractionAlertActive && !isDistracted && faceDetected {
                 self.onDistractionResolved?()
             }
         }

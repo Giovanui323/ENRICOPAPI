@@ -4,8 +4,10 @@ struct ContentView: View {
     @StateObject private var cameraManager = CameraManager.shared
     @StateObject private var tracker = FaceTracker.shared
     @StateObject private var soundManager = SoundManager.shared
+    @StateObject private var overlayManager = OverlayManager.shared
     
-    // Pomodoro Timer State
+    // Study Time & Pomodoro Timer State
+    @State private var studyDurationMinutes: Int = 25
     @State private var pomodoroSecondsRemaining: Int = 25 * 60
     @State private var isPomodoroRunning: Bool = false
     @State private var isBreakMode: Bool = false
@@ -15,189 +17,329 @@ struct ContentView: View {
     @State private var showingSettings: Bool = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            // HEADER
-            HStack(spacing: 12) {
-                if let icon = loadAppIcon() {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 38, height: 38)
-                        .cornerRadius(10)
-                        .shadow(color: .blue.opacity(0.4), radius: 4)
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Papi Focus")
-                        .font(.system(size: 18, weight: .black, design: .rounded))
-                    Text("STUDIA, NON TI DISTRARRE!")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.orange)
-                }
-                
-                Spacer()
-                
-                // Test Jumpscare Quick Button
-                Button(action: triggerTestJumpscare) {
-                    Label("Test", systemImage: "bolt.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.orange.opacity(0.2))
-                        .foregroundColor(.orange)
-                        .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                .help("Testa subito l'allarme a schermo intero")
-                
-                // Settings Gear Button
-                Button(action: { showingSettings = true }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .padding(8)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                .help("Apri Impostazioni e Sensibilità")
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 18)
-            
-            // WEBCAM CARD
+        GeometryReader { geo in
             ZStack {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.black.opacity(0.85))
-                    .frame(width: 380, height: 250)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(statusBorderColor, lineWidth: 3.5)
-                            .shadow(color: statusBorderColor.opacity(0.6), radius: 10)
-                    )
-                
-                if let image = cameraManager.currentFrame {
-                    Image(nsImage: image)
+                // 1. SFONDO CON LA FACCIA DI PAPI OVUNQUE (Subtle Watermark Mosaic)
+                if let tiled = PapiPatternCache.shared.getTiledImage(for: geo.size) {
+                    Image(nsImage: tiled)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 376, height: 246)
-                        .cornerRadius(18)
+                        .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
-                } else {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text(cameraManager.permissionGranted ? "Avvio fotocamera..." : "Richiesta permessi fotocamera...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                        .opacity(0.16)
                 }
                 
-                // Status Overlay Tag
-                VStack {
+                // 2. SFUMATURA VIBRANT DARK MACOS GLASS
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.70),
+                        Color(nsColor: .windowBackgroundColor).opacity(0.85),
+                        Color.black.opacity(0.90)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // 3. CONTENUTO PRINCIPALE IN CARD MODERNE MACOS
+                VStack(spacing: 16) {
+                    // SUBHEADER MINIMALE (Nessuna icona qui, l'icona è nella barra dell'app!)
                     HStack {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(statusColor)
-                                .frame(width: 10, height: 10)
-                                .shadow(color: statusColor, radius: 4)
-                            
-                            Text(statusText)
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                            
-                            if tracker.currentStatus.isDistracted && tracker.currentStatus.continuousDistractionTime > 0 {
-                                Text(String(format: "(%.1fs)", tracker.currentStatus.continuousDistractionTime))
-                                    .font(.system(size: 12, weight: .black, design: .monospaced))
-                                    .foregroundColor(.red)
-                            }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Papi Focus")
+                                .font(.system(size: 24, weight: .black, design: .rounded))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.white, .yellow.opacity(0.9)], startPoint: .leading, endPoint: .trailing)
+                                )
+                            Text("STUDIA, NON TI DISTRARRE!")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundColor(.orange)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.75))
-                        .cornerRadius(20)
                         
                         Spacer()
-                    }
-                    .padding(12)
-                    
-                    Spacer()
-                }
-            }
-            
-            // POMODORO TIMER AREA
-            VStack(spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(isBreakMode ? "Pausa Caffè" : "Sessione Studio", systemImage: isBreakMode ? "cup.and.saucer.fill" : "book.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isBreakMode ? .green : .secondary)
-                    
-                    Spacer()
-                    
-                    Text(formatTime(pomodoroSecondsRemaining))
-                        .font(.system(size: 34, weight: .heavy, design: .rounded))
-                        .foregroundColor(isBreakMode ? .green : (isPomodoroRunning ? .yellow : .primary))
-                }
-                .padding(.horizontal, 8)
-                
-                HStack(spacing: 12) {
-                    Button(action: togglePomodoro) {
-                        HStack {
-                            Image(systemName: isPomodoroRunning ? "pause.fill" : "play.fill")
-                            Text(isPomodoroRunning ? "Metti in Pausa" : "Avvia Studio")
-                                .font(.system(size: 15, weight: .bold))
+                        
+                        // Allarme Live Pill
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(tracker.isTrackingActive ? Color.green : Color.gray)
+                                .frame(width: 8, height: 8)
+                            Text(tracker.isTrackingActive ? "ALLARME ATTIVO" : "STANDBY")
+                                .font(.system(size: 10, weight: .black, design: .rounded))
+                                .foregroundColor(tracker.isTrackingActive ? .green : .secondary)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
-                            isPomodoroRunning ?
-                            LinearGradient(colors: [.red, .orange], startPoint: .leading, endPoint: .trailing) :
-                            LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.black.opacity(0.5))
                         .cornerRadius(12)
-                        .shadow(color: (isPomodoroRunning ? Color.red : Color.green).opacity(0.3), radius: 6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(tracker.isTrackingActive ? Color.green.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
+                        )
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 12)
                     
-                    Button(action: resetPomodoro) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 15, weight: .bold))
-                            .padding(12)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .cornerRadius(12)
+                    // WEBCAM MONITOR CARD CON CORNICE VIBRANTE MACOS
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color.black.opacity(0.88))
+                            .frame(width: 440, height: 250)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(statusBorderColor, lineWidth: 3)
+                                    .shadow(color: statusBorderColor.opacity(0.5), radius: 8)
+                            )
+                        
+                        if let image = cameraManager.currentFrame {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 436, height: 246)
+                                .cornerRadius(16)
+                                .clipped()
+                        } else {
+                            VStack(spacing: 10) {
+                                ProgressView()
+                                Text(cameraManager.permissionGranted ? "Avvio fotocamera..." : "Richiesta permessi fotocamera...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        // Overlay Top Badges (Stato concentrazione & Papi Tag)
+                        VStack {
+                            HStack {
+                                // Status Tag
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(statusColor)
+                                        .frame(width: 9, height: 9)
+                                        .shadow(color: statusColor, radius: 4)
+                                    
+                                    Text(statusText)
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                    
+                                    if tracker.isTrackingActive && tracker.currentStatus.isDistracted && tracker.currentStatus.continuousDistractionTime > 0 {
+                                        Text(String(format: "(%.1fs)", tracker.currentStatus.continuousDistractionTime))
+                                            .font(.system(size: 11, weight: .black, design: .monospaced))
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.black.opacity(0.80))
+                                .cornerRadius(14)
+                                
+                                Spacer()
+                                
+                                // Enrico Papi Watermark Tag
+                                HStack(spacing: 5) {
+                                    if let icon = loadPapiMiniIcon() {
+                                        Image(nsImage: icon)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 14, height: 14)
+                                            .clipShape(Circle())
+                                    }
+                                    Text("Papi Watch")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.yellow)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.75))
+                                .cornerRadius(10)
+                            }
+                            .padding(10)
+                            
+                            Spacer()
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .help("Azzera Timer Studio")
+                    
+                    // CARD CONTROLLO STUDIO & TIMER (L'allarme si attiva solo quando attivato)
+                    VStack(spacing: 12) {
+                        // Selettore Durata Studio (visibile prima di avviare)
+                        if !isPomodoroRunning {
+                            HStack(spacing: 6) {
+                                Text("Durata:")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                
+                                ForEach([15, 25, 30, 45, 60], id: \.self) { mins in
+                                    Button("\(mins)m") {
+                                        studyDurationMinutes = mins
+                                        pomodoroSecondsRemaining = mins * 60
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(.system(size: 11, weight: studyDurationMinutes == mins ? .black : .bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(studyDurationMinutes == mins ? Color.orange : Color(nsColor: .controlBackgroundColor).opacity(0.8))
+                                    .foregroundColor(studyDurationMinutes == mins ? .white : .primary)
+                                    .cornerRadius(6)
+                                }
+                                
+                                Spacer()
+                                
+                                // Stepper [-] [+]
+                                HStack(spacing: 2) {
+                                    Button(action: {
+                                        if studyDurationMinutes > 5 {
+                                            studyDurationMinutes -= 5
+                                            pomodoroSecondsRemaining = studyDurationMinutes * 60
+                                        }
+                                    }) {
+                                        Image(systemName: "minus")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .frame(width: 22, height: 22)
+                                            .background(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+                                            .cornerRadius(4)
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Text("\(studyDurationMinutes)m")
+                                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                                        .frame(width: 36)
+                                    
+                                    Button(action: {
+                                        if studyDurationMinutes < 180 {
+                                            studyDurationMinutes += 5
+                                            pomodoroSecondsRemaining = studyDurationMinutes * 60
+                                        }
+                                    }) {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .frame(width: 22, height: 22)
+                                            .background(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+                                            .cornerRadius(4)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                        }
+                        
+                        // Grande Display Digitale del Timer
+                        HStack(alignment: .firstTextBaseline) {
+                            Label(isBreakMode ? "Pausa Caffè" : "Sessione di Studio", systemImage: isBreakMode ? "cup.and.saucer.fill" : "book.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(isBreakMode ? .green : .secondary)
+                            
+                            Spacer()
+                            
+                            Text(formatTime(pomodoroSecondsRemaining))
+                                .font(.system(size: 38, weight: .heavy, design: .rounded))
+                                .foregroundColor(isBreakMode ? .green : (isPomodoroRunning ? .yellow : .primary))
+                                .shadow(color: (isPomodoroRunning ? Color.yellow.opacity(0.4) : Color.clear), radius: 8)
+                        }
+                        .padding(.horizontal, 6)
+                        
+                        // Pulsanti di Avvio Studio & Reset
+                        HStack(spacing: 12) {
+                            Button(action: togglePomodoro) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: isPomodoroRunning ? "pause.fill" : "play.fill")
+                                    Text(isPomodoroRunning ? "Metti in Pausa (Disattiva Allarme)" : "Avvia Studio e Allarme (\(studyDurationMinutes) min)")
+                                        .font(.system(size: 14, weight: .bold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(
+                                    isPomodoroRunning ?
+                                    LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing) :
+                                    LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                                .shadow(color: (isPomodoroRunning ? Color.red : Color.green).opacity(0.3), radius: 6)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button(action: resetPomodoro) {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .padding(12)
+                                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+                                    .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Azzera Timer e Disattiva Allarme")
+                        }
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.65))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                    )
+                    .padding(.horizontal, 22)
+                    
+                    // FOOTER: STATISTICHE DISTRAZIONI CON AVATAR DI PAPI
+                    HStack {
+                        HStack(spacing: 8) {
+                            if let icon = loadPapiMiniIcon() {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 18, height: 18)
+                                    .clipShape(Circle())
+                            }
+                            Text("Beccato da Papi:")
+                                .foregroundColor(.secondary)
+                            Text("\(tracker.distractionCount) \(tracker.distractionCount == 1 ? "volta" : "volte")")
+                                .fontWeight(.bold)
+                                .foregroundColor(tracker.distractionCount > 0 ? .orange : .primary)
+                        }
+                        .font(.system(size: 13))
+                        
+                        Spacer()
+                        
+                        if tracker.distractionCount > 0 {
+                            Button("Azzera") {
+                                tracker.resetDistractionCount()
+                            }
+                            .font(.caption)
+                            .buttonStyle(.plain)
+                            .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
                 }
             }
-            .padding(.horizontal, 24)
-            
-            // FOOTER: STATS BADGE
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    Text("Beccato da Papi:")
-                        .foregroundColor(.secondary)
-                    Text("\(tracker.distractionCount) \(tracker.distractionCount == 1 ? "volta" : "volte")")
-                        .fontWeight(.bold)
-                }
-                .font(.system(size: 13))
-                
-                Spacer()
-                
-                if tracker.distractionCount > 0 {
-                    Button("Azzera") {
-                        tracker.resetDistractionCount()
-                    }
-                    .font(.caption)
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
         }
-        .frame(width: 420, height: 490)
+        .frame(width: 480, height: 570)
+        // BARRA NATIVA MACOS (L'icona e il nome stanno QUI nella barra, non nella pagina iniziale!)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                HStack(spacing: 8) {
+                    if let icon = loadAppIcon() {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .cornerRadius(5)
+                            .shadow(color: .black.opacity(0.2), radius: 2)
+                    }
+                    Text("Papi Focus")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                }
+            }
+            
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: triggerTestJumpscare) {
+                    Label("Test Allarme", systemImage: "bolt.fill")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .help("Testa l'allarme: dovrai cliccare 'HO CAPITO' e guardare il PC per sbloccare!")
+                
+                Button(action: { showingSettings = true }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .help("Apri Impostazioni e Sensibilità")
+            }
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView(tracker: tracker, soundManager: soundManager)
         }
@@ -205,6 +347,7 @@ struct ContentView: View {
     
     // Helpers
     private var statusColor: Color {
+        if !tracker.isTrackingActive { return .gray }
         if !tracker.currentStatus.isFaceDetected { return .red }
         if tracker.isDistractionAlertActive { return .red }
         if tracker.currentStatus.isDistracted { return .orange }
@@ -212,6 +355,7 @@ struct ContentView: View {
     }
     
     private var statusBorderColor: Color {
+        if !tracker.isTrackingActive { return .secondary.opacity(0.3) }
         if tracker.isDistractionAlertActive { return .red }
         if tracker.currentStatus.isDistracted { return .orange }
         return .green
@@ -219,7 +363,7 @@ struct ContentView: View {
     
     private var statusText: String {
         if isBreakMode { return "Pausa Relax" }
-        if !tracker.isTrackingActive { return "Pausa" }
+        if !tracker.isTrackingActive { return "Allarme in Standby" }
         if tracker.isDistractionAlertActive { return "STUDIA, NON TI DISTRARRE!" }
         if tracker.currentStatus.isDistracted { return "Attenzione: distratto!" }
         return "Concentrato sul PC"
@@ -241,13 +385,14 @@ struct ContentView: View {
                         pomodoroSecondsRemaining -= 1
                     } else {
                         isBreakMode.toggle()
-                        pomodoroSecondsRemaining = isBreakMode ? (5 * 60) : (25 * 60)
+                        pomodoroSecondsRemaining = isBreakMode ? (5 * 60) : (studyDurationMinutes * 60)
                         FaceTracker.shared.isTrackingActive = !isBreakMode
                         SoundManager.shared.playMoosecaAudio()
                     }
                 }
             }
         } else {
+            tracker.isTrackingActive = false
             pomodoroTimer?.invalidate()
             pomodoroTimer = nil
         }
@@ -258,15 +403,12 @@ struct ContentView: View {
         pomodoroTimer = nil
         isPomodoroRunning = false
         isBreakMode = false
-        pomodoroSecondsRemaining = 25 * 60
-        tracker.isTrackingActive = true
+        pomodoroSecondsRemaining = studyDurationMinutes * 60
+        tracker.isTrackingActive = false
     }
     
     private func triggerTestJumpscare() {
-        OverlayManager.shared.triggerAlert(reason: "Test jumpscare manuale!")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            OverlayManager.shared.dismissAlert()
-        }
+        OverlayManager.shared.triggerAlert(reason: "Test jumpscare manuale")
     }
     
     private func loadAppIcon() -> NSImage? {
@@ -282,9 +424,23 @@ struct ContentView: View {
         }
         return nil
     }
+    
+    private func loadPapiMiniIcon() -> NSImage? {
+        let paths = [
+            Bundle.main.resourcePath.map { $0 + "/papi_pattern.jpg" } ?? "",
+            FileManager.default.currentDirectoryPath + "/Assets/papi_pattern.jpg",
+            "/Users/lucasicignano/ENRICOPAPI/Assets/papi_pattern.jpg"
+        ]
+        for path in paths {
+            if let img = NSImage(contentsOfFile: path) {
+                return img
+            }
+        }
+        return loadAppIcon()
+    }
 }
 
-// DEDICATED SETTINGS VIEW SHEET
+// MARK: - Dedicated Settings Sheet
 struct SettingsView: View {
     @ObservedObject var tracker: FaceTracker
     @ObservedObject var soundManager: SoundManager
@@ -294,70 +450,85 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Impostazioni")
-                    .font(.system(size: 18, weight: .bold))
+                Text("Impostazioni & Sensibilità")
+                    .font(.headline)
                 Spacer()
                 Button("Fine") {
                     dismiss()
                 }
-                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
             }
             .padding(18)
+            .background(Color(nsColor: .windowBackgroundColor))
             
             Divider()
             
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    // SECTION 1: Sensibilità e Tempi
+                VStack(alignment: .leading, spacing: 20) {
+                    // SECTION 0: Attivazione Manuale
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Sensibilità & Rilevamento")
+                        Text("Stato Allarme")
                             .font(.headline)
                             .foregroundColor(.primary)
                         
-                        // Tolleranza
-                        VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Attiva allarme anti-distrazione anche fuori sessione Pomodoro", isOn: $tracker.isTrackingActive)
+                            .toggleStyle(.switch)
+                    }
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+                    
+                    // SECTION 1: Soglie di Rilevamento
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Sensibilità Distrazione")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("Tempo di tolleranza:")
+                                Text("Tolleranza prima dell'allarme:")
                                 Spacer()
                                 Text(String(format: "%.1f secondi", tracker.toleranceSeconds))
-                                    .fontWeight(.bold)
+                                    .fontWeight(.semibold)
                             }
-                            Slider(value: $tracker.toleranceSeconds, in: 0.5...4.0, step: 0.25)
-                            Text("Tempo di distrazione continuata prima dell'allarme.")
-                                .font(.caption2)
+                            Slider(value: $tracker.toleranceSeconds, in: 0.5...5.0, step: 0.5)
+                            Text("Tempo in cui puoi guardare altrove prima che scatti Enrico Papi.")
+                                .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                         
-                        // Pitch (telefono)
-                        VStack(alignment: .leading, spacing: 4) {
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("Sguardo in basso (Telefono):")
+                                Text("Inclinazione verso il basso (Telefono/Scrivania):")
                                 Spacer()
-                                Text(pitchSensitivityDescription)
-                                    .fontWeight(.bold)
+                                Text(String(format: "%.2f", abs(tracker.pitchDownThreshold)))
+                                    .fontWeight(.semibold)
                             }
                             Slider(value: Binding(
-                                get: { -tracker.pitchDownThreshold },
+                                get: { abs(tracker.pitchDownThreshold) },
                                 set: { tracker.pitchDownThreshold = -$0 }
-                            ), in: 0.08...0.30, step: 0.02)
-                            Text("Regola quanto in basso devi guardare prima che scatti l'allarme.")
-                                .font(.caption2)
+                            ), in: 0.08...0.40, step: 0.02)
+                            Text("Valori più bassi = allarme più severo se abbassi la testa.")
+                                .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                         
-                        // Yaw (voltarsi)
-                        VStack(alignment: .leading, spacing: 4) {
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("Rotazione testa (Laterale):")
+                                Text("Rotazione orizzontale (Sinistra/Destra):")
                                 Spacer()
-                                Text(yawSensitivityDescription)
-                                    .fontWeight(.bold)
+                                Text(String(format: "%.2f rad", tracker.yawThreshold))
+                                    .fontWeight(.semibold)
                             }
-                            Slider(value: $tracker.yawThreshold, in: 0.18...0.42, step: 0.02)
+                            Slider(value: $tracker.yawThreshold, in: 0.15...0.60, step: 0.02)
                         }
                         
-                        Toggle("Rileva occhi chiusi / sonnolenza", isOn: $tracker.checkEyesClosed)
-                        Toggle("Monitoraggio attivo", isOn: $tracker.isTrackingActive)
+                        Divider()
+                        
+                        Toggle("Rileva occhi chiusi (anti-sonno)", isOn: $tracker.checkEyesClosed)
                     }
                     .padding(16)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
@@ -373,61 +544,18 @@ struct SettingsView: View {
                         Button(action: { soundManager.playMoosecaAudio() }) {
                             Label("Ascolta Anteprima Audio Mooseca", systemImage: "speaker.wave.3.fill")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .cornerRadius(8)
                     }
-                    .padding(16)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
-                    
-                    // SECTION 3: Telemetria Live (Diagnostica)
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Telemetria in Tempo Reale")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        
-                        HStack {
-                            Text("Inclinazione (Pitch):")
-                            Spacer()
-                            Text(String(format: "%.2f", tracker.currentStatus.pitch))
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(tracker.currentStatus.pitch < tracker.pitchDownThreshold ? .red : .green)
-                        }
-                        
-                        HStack {
-                            Text("Rotazione (Yaw):")
-                            Spacer()
-                            Text(String(format: "%.2f", tracker.currentStatus.yaw))
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(abs(tracker.currentStatus.yaw) > tracker.yawThreshold ? .red : .green)
-                        }
-                        
-                        HStack {
-                            Text("Apertura Occhi:")
-                            Spacer()
-                            Text(String(format: "%.2f", (tracker.currentStatus.leftEyeOpenness + tracker.currentStatus.rightEyeOpenness) / 2))
-                                .font(.system(.body, design: .monospaced))
-                        }
-                    }
-                    .font(.subheadline)
                     .padding(16)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
                 }
                 .padding(20)
             }
         }
-        .frame(width: 440, height: 530)
-    }
-    
-    private var pitchSensitivityDescription: String {
-        let val = -tracker.pitchDownThreshold
-        if val < 0.12 { return "Molto Severa" }
-        if val < 0.20 { return "Normale" }
-        return "Tollerante"
-    }
-    
-    private var yawSensitivityDescription: String {
-        let val = tracker.yawThreshold
-        if val < 0.22 { return "Molto Severa" }
-        if val < 0.32 { return "Normale" }
-        return "Tollerante"
+        .frame(width: 480, height: 520)
     }
 }

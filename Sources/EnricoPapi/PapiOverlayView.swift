@@ -107,6 +107,7 @@ struct PapiOverlayView: View {
     let reason: String
     let onDismiss: () -> Void
     
+    @ObservedObject private var overlayManager = OverlayManager.shared
     @State private var pulseScale: CGFloat = 1.0
     @State private var shakeOffset: CGFloat = 0.0
     @State private var glowOpacity: Double = 0.85
@@ -222,36 +223,86 @@ struct PapiOverlayView: View {
                             )
                     )
                     
-                    // SUBTITLE
-                    VStack(spacing: 4) {
+                    // SUBTITLE & UNLOCK INSTRUCTIONS
+                    VStack(spacing: 6) {
                         Text("🎵 MOOSECA! Rimettiti subito sui libri! 🎵")
                             .font(.system(size: 20, weight: .heavy, design: .rounded))
                             .foregroundColor(.yellow)
                             .shadow(color: .black, radius: 4)
                         
-                        Text("Rialza lo sguardo verso lo schermo per far sparire questo avviso.")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.white.opacity(0.9))
+                        if overlayManager.hasAcknowledged {
+                            HStack(spacing: 8) {
+                                Image(systemName: "eyes")
+                                    .font(.headline)
+                                Text("HAI CLICCATO! ORA GUARDA IL PC PER SBLOCCARE")
+                                    .font(.system(size: 15, weight: .black, design: .rounded))
+                            }
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.85))
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green, lineWidth: 1.5))
+                        } else {
+                            Text("1. Clicca \"HO CAPITO\"  •  2. Guarda lo schermo per sbloccare")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white.opacity(0.95))
+                                .shadow(color: .black, radius: 4)
+                        }
                     }
                     
-                    // DISMISS BUTTON
-                    Button(action: onDismiss) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "book.fill")
-                            Text("HO CAPITO! TORNO A STUDIARE")
-                                .font(.system(size: 17, weight: .heavy))
+                    // DUAL-VERIFICATION UNLOCK BUTTON
+                    Button(action: {
+                        overlayManager.acknowledge()
+                    }) {
+                        HStack(spacing: 12) {
+                            if overlayManager.hasAcknowledged {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("CONFERMATO! ORA GUARDA IL PC")
+                                        .font(.system(size: 16, weight: .heavy))
+                                    Text("Fissa lo schermo per sbloccare...")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .opacity(0.85)
+                                }
+                            } else {
+                                Image(systemName: "hand.tap.fill")
+                                    .font(.title2)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("HO CAPITO! TORNO A STUDIARE")
+                                        .font(.system(size: 17, weight: .heavy))
+                                    Text("Clicca qui e guarda lo schermo per sbloccare")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .opacity(0.85)
+                                }
+                            }
                         }
                         .padding(.horizontal, 32)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 14)
                         .foregroundColor(.black)
                         .background(
-                            LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
+                            overlayManager.hasAcknowledged
+                                ? LinearGradient(colors: [.green, .mint], startPoint: .top, endPoint: .bottom)
+                                : LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
                         )
                         .cornerRadius(28)
-                        .shadow(color: .orange.opacity(0.8), radius: 15)
+                        .shadow(color: (overlayManager.hasAcknowledged ? Color.green : Color.orange).opacity(0.8), radius: 15)
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 4)
+                    
+                    if overlayManager.hasAcknowledged {
+                        Button(action: onDismiss) {
+                            Text("(Webcam coperta o stanza buia? Clicca qui per sblocco forzato)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.75))
+                                .underline()
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                    }
                     
                     Spacer()
                 }

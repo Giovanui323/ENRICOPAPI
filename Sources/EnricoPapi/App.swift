@@ -10,17 +10,56 @@ struct EnricoPapiApp: App {
             ContentView()
         }
         .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
-        .defaultSize(width: 820, height: 640)
+        .windowToolbarStyle(.unified(showsTitle: false))
+        .defaultSize(width: 480, height: 600)
     }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem?
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Initialize singletons
         _ = CameraManager.shared
         _ = FaceTracker.shared
         _ = OverlayManager.shared
+        
+        setupStatusBarItem()
+    }
+    
+    private func setupStatusBarItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem?.button {
+            if let icon = loadStatusBarIcon() {
+                icon.size = NSSize(width: 18, height: 18)
+                button.image = icon
+            } else {
+                button.image = NSImage(systemSymbolName: "face.smiling.fill", accessibilityDescription: "Papi Focus")
+            }
+            button.action = #selector(statusBarClicked)
+            button.target = self
+        }
+    }
+    
+    @objc private func statusBarClicked() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.level == .normal }) {
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+    
+    private func loadStatusBarIcon() -> NSImage? {
+        let paths = [
+            Bundle.main.resourcePath.map { $0 + "/enrico_papi.jpg" } ?? "",
+            FileManager.default.currentDirectoryPath + "/Assets/enrico_papi.jpg",
+            "/Users/lucasicignano/ENRICOPAPI/Assets/enrico_papi.jpg"
+        ]
+        for path in paths {
+            if let img = NSImage(contentsOfFile: path) {
+                return img
+            }
+        }
+        return nil
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
